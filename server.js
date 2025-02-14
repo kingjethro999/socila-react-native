@@ -92,23 +92,33 @@ io.on('connection', (socket) => {
 app.set('io', io);
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
+
+// Add request logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log('Headers:', req.headers);
+    next();
+});
+
+// Parse JSON bodies
 app.use(express.json({ limit: '10mb' }));
+// Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Add request logging middleware
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    next();
-});
-
 // API Routes
-app.use('/api/chats', chatRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/chats', chatRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -136,28 +146,10 @@ app.get('/health', async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    logError(err, 'global-error-handler');
-    
-    // Handle multer errors
-    if (err.name === 'MulterError') {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ message: 'File is too large' });
-        }
-        return res.status(400).json({ message: 'Error uploading file' });
-    }
-
-    // Handle specific types of errors
-    if (err instanceof mongoose.Error.ValidationError) {
-        return res.status(400).json({ 
-            message: 'Validation error',
-            errors: Object.values(err.errors).map(e => e.message)
-        });
-    }
-
-    // Default error response
+    console.error('Error:', err);
     res.status(err.status || 500).json({
-        message: err.message || 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? err : {}
+        message: err.message || 'Internal Server Error',
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
     });
 });
 
