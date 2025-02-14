@@ -6,14 +6,19 @@ const auth = async (req, res, next) => {
         const token = req.header('Authorization')?.replace('Bearer ', '');
         
         if (!token) {
-            throw new Error('No authentication token provided');
+            return res.status(401).json({ message: 'No authentication token provided' });
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        
+        if (!decoded.userId) {
+            return res.status(401).json({ message: 'Invalid token format' });
+        }
+
         const user = await User.findById(decoded.userId);
 
         if (!user) {
-            throw new Error('User not found');
+            return res.status(401).json({ message: 'User not found' });
         }
 
         req.user = user;
@@ -21,10 +26,13 @@ const auth = async (req, res, next) => {
         next();
     } catch (error) {
         console.error('Auth middleware error:', error);
-        res.status(401).json({ 
-            message: 'Authentication failed',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ message: 'Invalid token' });
+        }
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ message: 'Token expired' });
+        }
+        res.status(401).json({ message: 'Authentication failed' });
     }
 };
 
