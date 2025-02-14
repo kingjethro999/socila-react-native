@@ -157,18 +157,16 @@ app.use((err, req, res, next) => {
 async function connectWithRetry(retries = 5, delay = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
-            await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/social-media-db', {
-                useNewUrlParser: true,
-                useUnifiedTopology: true
+            console.log('Attempting to connect to MongoDB...');
+            await mongoose.connect('mongodb+srv://kingjethro999:jethro123@cluster0.qxbxjfz.mongodb.net/social-media-app?retryWrites=true&w=majority', {
+                serverSelectionTimeoutMS: 5000,
+                socketTimeoutMS: 45000,
             });
             console.log('MongoDB connected successfully');
-            break;
+            return;
         } catch (err) {
-            if (i === retries - 1) {
-                console.error('Failed to connect to MongoDB:', err);
-                process.exit(1);
-            }
-            console.log(`Retrying MongoDB connection in ${delay/1000} seconds...`);
+            console.error(`Failed to connect to MongoDB (attempt ${i + 1}/${retries}):`, err.message);
+            if (i === retries - 1) throw err;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -179,20 +177,12 @@ async function startServer() {
     try {
         await connectWithRetry();
         
-        const port = process.env.PORT || 3000;
-        httpServer.listen(port, () => {
-            console.log(`Server running on port ${port}`);
-        });
-
-        httpServer.on('error', (error) => {
-            logError(error, 'http-server');
-            if (error.syscall !== 'listen') {
-                throw error;
-            }
-            process.exit(1);
+        const PORT = process.env.PORT || 10000;
+        httpServer.listen(PORT, '0.0.0.0', () => {
+            console.log(`Server running on port ${PORT}`);
         });
     } catch (error) {
-        logError(error, 'server-startup');
+        console.error('Failed to start server:', error);
         process.exit(1);
     }
 }
