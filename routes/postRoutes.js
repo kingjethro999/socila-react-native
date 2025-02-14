@@ -76,7 +76,18 @@ router.get('/', auth, async (req, res) => {
 // Create a new post
 router.post('/', auth, upload.array('media', 5), async (req, res) => {
     try {
+        console.log('Creating new post with data:', {
+            text: req.body.text,
+            mediaCount: req.files?.length || 0,
+            userId: req.user._id
+        });
+
         const { text } = req.body;
+
+        if (!text && (!req.files || req.files.length === 0)) {
+            return res.status(400).json({ message: 'Post must have either text or media' });
+        }
+
         const media = req.files ? req.files.map(file => file.filename) : [];
 
         const post = new Post({
@@ -87,6 +98,8 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
 
         await post.save();
         await post.populate('userId', 'username profilePicture');
+
+        console.log('Post created successfully:', post._id);
 
         res.status(201).json({
             _id: post._id,
@@ -101,15 +114,20 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
         });
     } catch (error) {
         console.error('Error creating post:', error);
+        
         // Clean up uploaded files if post creation fails
         if (req.files) {
             req.files.forEach(file => {
-                fs.unlink(file.path, err => {
+                fs.unlink(path.join(uploadsDir, file.filename), err => {
                     if (err) console.error('Error deleting file:', err);
                 });
             });
         }
-        res.status(500).json({ message: 'Error creating post' });
+
+        res.status(500).json({ 
+            message: error.message || 'Error creating post',
+            error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
