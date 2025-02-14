@@ -6,6 +6,7 @@ const fs = require('fs');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
 // Import routes
 const userRoutes = require('./routes/userRoutes');
@@ -116,7 +117,15 @@ app.use(express.json({
     }
 }));
 
-// Enhanced health check route
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// API Routes
+app.use('/api/chats', chatRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/posts', postRoutes);
+
+// Health check endpoint
 app.get('/health', async (req, res) => {
     try {
         const dbState = mongoose.connection.readyState;
@@ -143,28 +152,6 @@ app.get('/health', async (req, res) => {
         res.status(500).json({ status: 'unhealthy', error: err.message });
     }
 });
-
-// Routes with enhanced error handling
-app.use('/api/chats', async (req, res, next) => {
-    try {
-        // Verify database connection before proceeding
-        if (mongoose.connection.readyState !== 1) {
-            throw new Error('Database connection not ready');
-        }
-        next();
-    } catch (err) {
-        logError(err, 'chat-route-middleware');
-        res.status(503).json({ 
-            message: 'Service temporarily unavailable',
-            details: err.message
-        });
-    }
-});
-
-// Your existing routes here
-app.use('/api/chats', chatRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/posts', postRoutes);
 
 // Enhanced error handling middleware
 app.use((err, req, res, next) => {
@@ -196,7 +183,7 @@ app.use((err, req, res, next) => {
 });
 
 // MongoDB configuration
-const MONGODB_URI = "mongodb+srv://jethrojerrybj:seun2009@cluster0.cwsrk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://jethrojerrybj:seun2009@cluster0.cwsrk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 const options = {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -231,7 +218,7 @@ const startServer = async () => {
             throw new Error('Failed to connect to MongoDB after multiple retries');
         }
 
-        const PORT = process.env.PORT || 5000;
+        const PORT = process.env.PORT || 3000;
         httpServer.listen(PORT, '0.0.0.0', () => {
             console.log(`Server is running on port ${PORT}`);
             console.log(`Environment: ${process.env.NODE_ENV}`);

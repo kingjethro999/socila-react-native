@@ -37,8 +37,8 @@ const upload = multer({
 });
 
 // Error handling middleware
-const handleError = (err, req, res, next) => {
-    console.error('Error in chat routes:', err);
+const handleError = (err, req, res) => {
+    console.error('Chat routes error:', err);
     if (err instanceof multer.MulterError) {
         return res.status(400).json({ 
             message: 'File upload error',
@@ -60,12 +60,15 @@ const handleError = (err, req, res, next) => {
 // Get all chats for current user
 router.get('/', auth, async (req, res) => {
     try {
+        console.log('Getting chats for user:', req.user._id);
         const chats = await Chat.find({
             participants: req.user._id
         })
         .populate('participants', 'username profilePicture')
         .populate('lastMessage')
         .sort('-updatedAt');
+
+        console.log('Found chats:', chats.length);
 
         // Add unread count for each chat
         const chatsWithUnread = chats.map(chat => {
@@ -88,6 +91,8 @@ router.get('/', auth, async (req, res) => {
 router.get('/search', auth, async (req, res) => {
     try {
         const query = req.query.q;
+        console.log('Searching chats with query:', query);
+        
         const chats = await Chat.find({
             participants: req.user._id
         })
@@ -109,6 +114,7 @@ router.get('/search', auth, async (req, res) => {
             chat.participants.some(p => p !== null)
         );
 
+        console.log('Found matching chats:', filteredChats.length);
         res.json({ chats: filteredChats });
     } catch (error) {
         handleError(error, req, res);
@@ -118,6 +124,7 @@ router.get('/search', auth, async (req, res) => {
 // Get single chat
 router.get('/:id', auth, async (req, res) => {
     try {
+        console.log('Getting chat:', req.params.id);
         const chat = await Chat.findById(req.params.id)
             .populate('participants', 'username profilePicture')
             .populate('lastMessage');
@@ -139,6 +146,7 @@ router.get('/:id', auth, async (req, res) => {
 // Get chat messages
 router.get('/:id/messages', auth, async (req, res) => {
     try {
+        console.log('Getting messages for chat:', req.params.id);
         const chat = await Chat.findById(req.params.id);
         if (!chat) {
             return res.status(404).json({ message: 'Chat not found' });
@@ -152,6 +160,8 @@ router.get('/:id/messages', auth, async (req, res) => {
             .populate('sender', 'username profilePicture')
             .sort('-createdAt')
             .limit(50);
+
+        console.log('Found messages:', messages.length);
 
         // Mark messages as read
         await Message.updateMany(
@@ -178,6 +188,7 @@ router.get('/:id/messages', auth, async (req, res) => {
 // Send message
 router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
     try {
+        console.log('Sending message to chat:', req.params.id);
         const chat = await Chat.findById(req.params.id);
         if (!chat) {
             return res.status(404).json({ message: 'Chat not found' });
@@ -196,6 +207,7 @@ router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
 
         if (req.file) {
             messageData.mediaUrl = `/uploads/${req.file.filename}`;
+            console.log('Uploaded media:', messageData.mediaUrl);
         } else {
             if (!req.body.content) {
                 return res.status(400).json({ message: 'Message content is required' });
@@ -206,6 +218,8 @@ router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
         const message = await Message.create(messageData);
         const populatedMessage = await Message.findById(message._id)
             .populate('sender', 'username profilePicture');
+
+        console.log('Created message:', message._id);
 
         // Update chat's last message and increment unread counts
         await Chat.updateOne(
@@ -225,6 +239,7 @@ router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
         const io = req.app.get('io');
         if (io) {
             io.to(req.params.id).emit('message', populatedMessage);
+            console.log('Emitted message to room:', req.params.id);
         }
 
         res.status(201).json({ message: populatedMessage });
