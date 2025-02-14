@@ -47,7 +47,10 @@ router.get('/', auth, async (req, res) => {
     try {
         console.log('Getting posts for user:', req.user._id);
         const posts = await Post.find()
-            .populate('userId', 'username profilePicture')
+            .populate({
+                path: 'userId',
+                select: 'username profilePicture'
+            })
             .sort({ createdAt: -1 });
 
         // Format posts with like status
@@ -63,13 +66,18 @@ router.get('/', auth, async (req, res) => {
                 media: mediaUrls,
                 likes: post.likes,
                 comments: post.comments,
-                userId: post.userId,
+                userId: {
+                    _id: post.userId._id,
+                    username: post.userId.username,
+                    profilePicture: post.userId.profilePicture
+                },
                 createdAt: post.createdAt,
                 updatedAt: post.updatedAt,
                 isLiked: isLiked
             };
         });
 
+        console.log('Formatted posts:', formattedPosts);
         res.json(formattedPosts);
     } catch (error) {
         console.error('Error getting posts:', error);
@@ -100,7 +108,12 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
         });
 
         await post.save();
-        await post.populate('userId', 'username profilePicture');
+        
+        // Populate user data after saving
+        await post.populate({
+            path: 'userId',
+            select: 'username profilePicture'
+        });
 
         console.log('Post created successfully:', post._id);
 
@@ -114,7 +127,11 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
             media: mediaUrls,
             likes: post.likes,
             comments: post.comments,
-            userId: post.userId,
+            userId: {
+                _id: post.userId._id,
+                username: post.userId.username,
+                profilePicture: post.userId.profilePicture
+            },
             createdAt: post.createdAt,
             updatedAt: post.updatedAt,
             isLiked: false
