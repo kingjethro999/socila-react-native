@@ -56,8 +56,12 @@ router.get('/', auth, async (req, res) => {
         // Format posts with like status
         const formattedPosts = posts.map(post => {
             const isLiked = post.likes.includes(req.user._id);
+            const baseUrl = process.env.NODE_ENV === 'production' 
+                ? 'https://social-media-backend-c51i.onrender.com'
+                : `${req.protocol}://${req.get('host')}`;
+                
             const mediaUrls = post.media.map(filename => 
-                `${req.protocol}://${req.get('host')}/uploads/${filename}`
+                `${baseUrl}/uploads/${filename}`
             );
 
             return {
@@ -69,7 +73,7 @@ router.get('/', auth, async (req, res) => {
                 userId: {
                     _id: post.userId._id,
                     username: post.userId.username,
-                    profilePicture: post.userId.profilePicture
+                    profilePicture: post.userId.profilePicture ? `${baseUrl}${post.userId.profilePicture}` : null
                 },
                 createdAt: post.createdAt,
                 updatedAt: post.updatedAt,
@@ -117,8 +121,12 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
 
         console.log('Post created successfully:', post._id);
 
+        const baseUrl = process.env.NODE_ENV === 'production' 
+            ? 'https://social-media-backend-c51i.onrender.com'
+            : `${req.protocol}://${req.get('host')}`;
+
         const mediaUrls = media.map(filename => 
-            `${req.protocol}://${req.get('host')}/uploads/${filename}`
+            `${baseUrl}/uploads/${filename}`
         );
 
         res.status(201).json({
@@ -130,7 +138,7 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
             userId: {
                 _id: post.userId._id,
                 username: post.userId.username,
-                profilePicture: post.userId.profilePicture
+                profilePicture: post.userId.profilePicture ? `${baseUrl}${post.userId.profilePicture}` : null
             },
             createdAt: post.createdAt,
             updatedAt: post.updatedAt,
