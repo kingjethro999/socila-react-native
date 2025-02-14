@@ -1,33 +1,68 @@
-const router = require('express').Router();
+const express = require('express');
 const Post = require('../models/Post');
 const jwt = require('jsonwebtoken');
 
+const router = express.Router();
+
 // Middleware to verify token
 const verifyToken = (req, res, next) => {
-    const token = req.headers.authorization;
-    if (!token) return res.status(401).json("You are not authenticated!");
-
     try {
-        const decoded = jwt.verify(token.split(" ")[1], 'your_jwt_secret');
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ message: "No token provided" });
+        }
+
+        const token = authHeader.split(" ")[1];
+        if (!token) {
+            return res.status(401).json({ message: "Invalid token format" });
+        }
+
+        const decoded = jwt.verify(token, 'your-secret-key');
         req.user = decoded;
         next();
     } catch (err) {
-        return res.status(403).json("Token is not valid!");
+        console.error('Token verification error:', err);
+        return res.status(403).json({ message: "Invalid or expired token" });
     }
 };
 
 // Create a post
 router.post('/', verifyToken, async (req, res) => {
     try {
-        const newPost = new Post({
-            userId: req.user.id,
-            caption: req.body.caption,
-            image: req.body.image
-        });
+        console.log('Creating post with data:', req.body);
+        console.log('User from token:', req.user);
+
+        // Validate caption
+        if (!req.body.caption) {
+            return res.status(400).json({ message: 'Caption is required' });
+        }
+
+        // Create post object with required fields
+        const postData = {
+            userId: req.user.userId,
+            caption: req.body.caption
+        };
+
+        // Add image if provided
+        if (req.body.image) {
+            postData.image = req.body.image;
+        }
+
+        const newPost = new Post(postData);
         const savedPost = await newPost.save();
-        res.status(200).json(savedPost);
+        
+        console.log('Post created successfully:', savedPost);
+
+        res.status(201).json({
+            message: 'Post created successfully',
+            post: savedPost
+        });
     } catch (err) {
-        res.status(500).json(err);
+        console.error('Error creating post:', err);
+        res.status(500).json({
+            message: 'Failed to create post',
+            error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        });
     }
 });
 
@@ -37,9 +72,16 @@ router.get('/feed', verifyToken, async (req, res) => {
         const posts = await Post.find()
             .populate('userId', 'username profilePicture')
             .sort({ createdAt: -1 });
-        res.status(200).json(posts);
+        res.json({
+            message: 'Feed retrieved successfully',
+            posts
+        });
     } catch (err) {
-        res.status(500).json(err);
+        console.error('Error fetching feed:', err);
+        res.status(500).json({
+            message: 'Failed to fetch feed',
+            error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        });
     }
 });
 
@@ -48,18 +90,23 @@ router.put('/:id/like', verifyToken, async (req, res) => {
     try {
         const post = await Post.findById(req.params.id);
         if (!post) {
-            return res.status(404).json("Post not found");
+            return res.status(404).json({ message: "Post not found" });
         }
 
-        if (post.likes.includes(req.user.id)) {
-            await post.updateOne({ $pull: { likes: req.user.id } });
-            res.status(200).json("Post has been unliked");
+        const isLiked = post.likes.includes(req.user.userId);
+        if (isLiked) {
+            await post.updateOne({ $pull: { likes: req.user.userId } });
+            res.json({ message: "Post unliked successfully" });
         } else {
-            await post.updateOne({ $push: { likes: req.user.id } });
-            res.status(200).json("Post has been liked");
+            await post.updateOne({ $push: { likes: req.user.userId } });
+            res.json({ message: "Post liked successfully" });
         }
     } catch (err) {
-        res.status(500).json(err);
+        console.error('Error liking/unliking post:', err);
+        res.status(500).json({
+            message: 'Failed to like/unlike post',
+            error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        });
     }
 });
 
@@ -72,14 +119,18 @@ router.post('/:id/comment', verifyToken, async (req, res) => {
         }
 
         const newComment = {
-            userId: req.user.id,
+            userId: req.user.userId,
             text: req.body.text
         };
 
         await post.updateOne({ $push: { comments: newComment } });
         res.status(200).json("Comment has been added");
     } catch (err) {
-        res.status(500).json(err);
+        console.error('Error adding comment:', err);
+        res.status(500).json({
+            message: 'Failed to add comment',
+            error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        });
     }
 });
 

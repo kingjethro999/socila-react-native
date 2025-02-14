@@ -8,11 +8,12 @@ const postSchema = new mongoose.Schema({
     },
     caption: {
         type: String,
-        max: 500
+        max: 500,
+        required: true
     },
     image: {
         type: String,
-        required: true
+        required: false 
     },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -33,6 +34,8 @@ const postSchema = new mongoose.Schema({
             default: Date.now
         }
     }]
-}, { timestamps: true });
+}, {
+    timestamps: true 
+});
 
 module.exports = mongoose.model('Post', postSchema);
