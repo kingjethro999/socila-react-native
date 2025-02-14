@@ -155,18 +155,35 @@ app.use((err, req, res, next) => {
 
 // MongoDB connection with retry logic
 async function connectWithRetry(retries = 5, delay = 5000) {
+    const MONGODB_URI = 'mongodb+srv://jethrojerrybj:jethro123@cluster0.cwsrk.mongodb.net/social-media-app?retryWrites=true&w=majority&appName=Cluster0';
+    
     for (let i = 0; i < retries; i++) {
         try {
-            console.log('Attempting to connect to MongoDB...');
-            await mongoose.connect('mongodb+srv://kingjethro999:jethro123@cluster0.qxbxjfz.mongodb.net/social-media-app?retryWrites=true&w=majority', {
-                serverSelectionTimeoutMS: 5000,
+            console.log('Attempting to connect to MongoDB Atlas...');
+            await mongoose.connect(MONGODB_URI, {
+                serverSelectionTimeoutMS: 30000,
                 socketTimeoutMS: 45000,
+                connectTimeoutMS: 30000,
+                heartbeatFrequencyMS: 5000
             });
-            console.log('MongoDB connected successfully');
+            
+            // Test the connection
+            await mongoose.connection.db.admin().ping();
+            console.log('MongoDB Atlas connected successfully');
             return;
         } catch (err) {
-            console.error(`Failed to connect to MongoDB (attempt ${i + 1}/${retries}):`, err.message);
-            if (i === retries - 1) throw err;
+            console.error(`Failed to connect to MongoDB (attempt ${i + 1}/${retries}):`, {
+                message: err.message,
+                code: err.code,
+                name: err.name
+            });
+            
+            if (i === retries - 1) {
+                console.error('All connection attempts failed. Exiting...');
+                throw err;
+            }
+            
+            console.log(`Retrying MongoDB connection in ${delay/1000} seconds...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -177,12 +194,51 @@ async function startServer() {
     try {
         await connectWithRetry();
         
-        const PORT = process.env.PORT || 10000;
-        httpServer.listen(PORT, '0.0.0.0', () => {
-            console.log(`Server running on port ${PORT}`);
+        const port = process.env.PORT || 10000;
+        httpServer.listen(port, '0.0.0.0', () => {
+            console.log(`Server running on port ${port}`);
+            console.log(`Server URL: ${process.env.NODE_ENV === 'production' ? 'https://' : 'http://'}${process.env.RENDER_EXTERNAL_URL || `localhost:${port}`}`);
         });
+
+        // Handle server errors
+        httpServer.on('error', (error) => {
+            console.error('Server error:', {
+                message: error.message,
+                code: error.code,
+                syscall: error.syscall
+            });
+            
+            if (error.syscall !== 'listen') {
+                throw error;
+            }
+
+            // Handle specific listen errors
+            switch (error.code) {
+                case 'EACCES':
+                    console.error(`Port ${port} requires elevated privileges`);
+                    process.exit(1);
+                    break;
+                case 'EADDRINUSE':
+                    console.error(`Port ${port} is already in use`);
+                    process.exit(1);
+                    break;
+                default:
+                    throw error;
+            }
+        });
+
+        // Handle MongoDB disconnection
+        mongoose.connection.on('disconnected', () => {
+            console.error('MongoDB disconnected. Attempting to reconnect...');
+            connectWithRetry();
+        });
+
     } catch (error) {
-        console.error('Failed to start server:', error);
+        console.error('Failed to start server:', {
+            message: error.message,
+            code: error.code,
+            name: error.name
+        });
         process.exit(1);
     }
 }
