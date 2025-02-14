@@ -1,39 +1,25 @@
 const mongoose = require('mongoose');
 
-const mediaSchema = new mongoose.Schema({
-    url: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    type: {
-        type: String,
-        enum: ['image', 'video'],
-        required: true
-    }
-});
-
 const postSchema = new mongoose.Schema({
-    user: {
+    userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    content: {
+    text: {
         type: String,
         trim: true
     },
-    media: [mediaSchema],
-    allowComments: {
-        type: Boolean,
-        default: true
-    },
+    media: [{
+        type: String,
+        trim: true
+    }],
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }],
     comments: [{
-        user: {
+        userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
             required: true
@@ -52,9 +38,13 @@ const postSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Ensure either content or media is present
+// Add indexes
+postSchema.index({ userId: 1, createdAt: -1 });
+postSchema.index({ createdAt: -1 });
+
+// Ensure either text or media is present
 postSchema.pre('save', function(next) {
-    if (!this.content && (!this.media || this.media.length === 0)) {
+    if (!this.text && (!this.media || this.media.length === 0)) {
         next(new Error('Post must contain either text or media'));
     }
     if (this.media && this.media.length > 5) {
@@ -73,4 +63,6 @@ postSchema.virtual('likeCount').get(function() {
     return this.likes.length;
 });
 
-module.exports = mongoose.model('Post', postSchema);
+const Post = mongoose.model('Post', postSchema);
+
+module.exports = Post;

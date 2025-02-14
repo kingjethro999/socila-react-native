@@ -56,7 +56,7 @@ router.get('/', auth, async (req, res) => {
             return {
                 _id: post._id,
                 text: post.text,
-                media: post.media,
+                media: post.media.map(filename => `${req.protocol}://${req.get('host')}/uploads/${filename}`),
                 likes: post.likes,
                 comments: post.comments,
                 userId: post.userId,
@@ -104,7 +104,7 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
         res.status(201).json({
             _id: post._id,
             text: post.text,
-            media: post.media,
+            media: media.map(filename => `${req.protocol}://${req.get('host')}/uploads/${filename}`),
             likes: post.likes,
             comments: post.comments,
             userId: post.userId,
