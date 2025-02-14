@@ -92,33 +92,18 @@ io.on('connection', (socket) => {
 app.set('io', io);
 
 // Middleware
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-}));
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Add request logging middleware
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
 });
-
-app.use(express.json({
-    limit: '10mb',
-    verify: (req, res, buf) => {
-        try {
-            JSON.parse(buf);
-        } catch (e) {
-            res.status(400).json({ message: 'Invalid JSON' });
-            throw new Error('Invalid JSON');
-        }
-    }
-}));
-
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api/chats', chatRoutes);
@@ -140,96 +125,84 @@ app.get('/health', async (req, res) => {
             status: 'healthy',
             timestamp: new Date().toISOString(),
             mongodb: {
-                status: dbStates[dbState],
-                database: mongoose.connection.db?.databaseName,
-                host: mongoose.connection.host
-            },
-            memory: process.memoryUsage(),
-            uptime: process.uptime()
+                status: dbStates[dbState]
+            }
         });
-    } catch (err) {
-        logError(err, 'health-check');
-        res.status(500).json({ status: 'unhealthy', error: err.message });
+    } catch (error) {
+        logError(error, 'health-check');
+        res.status(500).json({ status: 'error', message: 'Health check failed' });
     }
 });
 
-// Enhanced error handling middleware
+// Error handling middleware
 app.use((err, req, res, next) => {
     logError(err, 'global-error-handler');
     
+    // Handle multer errors
+    if (err.name === 'MulterError') {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ message: 'File is too large' });
+        }
+        return res.status(400).json({ message: 'Error uploading file' });
+    }
+
     // Handle specific types of errors
     if (err instanceof mongoose.Error.ValidationError) {
         return res.status(400).json({ 
-            message: 'Validation Error', 
-            details: err.errors 
-        });
-    }
-    
-    if (err.name === 'UnauthorizedError') {
-        return res.status(401).json({ 
-            message: 'Authentication Error',
-            details: err.message
+            message: 'Validation error',
+            errors: Object.values(err.errors).map(e => e.message)
         });
     }
 
     // Default error response
-    res.status(err.status || 500).json({ 
-        message: err.message || 'Something went wrong!',
-        error: process.env.NODE_ENV === 'development' ? {
-            stack: err.stack,
-            details: err.message
-        } : 'Internal server error'
+    res.status(err.status || 500).json({
+        message: err.message || 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? err : {}
     });
 });
 
-// MongoDB configuration
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://jethrojerrybj:seun2009@cluster0.cwsrk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
-const options = {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    dbName: 'social-media-app'
-};
-
 // MongoDB connection with retry logic
-const connectWithRetry = async (retries = 5, delay = 5000) => {
+async function connectWithRetry(retries = 5, delay = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
-            await mongoose.connect(MONGODB_URI, {
-                ...options,
-                serverSelectionTimeoutMS: 5000,
-                heartbeatFrequencyMS: 1000
+            await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/social-media-db', {
+                useNewUrlParser: true,
+                useUnifiedTopology: true
             });
-            console.log('Successfully connected to MongoDB Atlas');
-            return true;
+            console.log('MongoDB connected successfully');
+            break;
         } catch (err) {
-            logError(err, 'mongodb-connection');
-            console.log(`Retrying connection in ${delay/1000} seconds... (${i + 1}/${retries})`);
+            if (i === retries - 1) {
+                console.error('Failed to connect to MongoDB:', err);
+                process.exit(1);
+            }
+            console.log(`Retrying MongoDB connection in ${delay/1000} seconds...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-    return false;
-};
+}
 
 // Start server with enhanced error handling
-const startServer = async () => {
+async function startServer() {
     try {
-        const connected = await connectWithRetry();
-        if (!connected) {
-            throw new Error('Failed to connect to MongoDB after multiple retries');
-        }
-
-        const PORT = process.env.PORT || 3000;
-        httpServer.listen(PORT, '0.0.0.0', () => {
-            console.log(`Server is running on port ${PORT}`);
-            console.log(`Environment: ${process.env.NODE_ENV}`);
-            console.log(`Database: ${mongoose.connection.db.databaseName}`);
+        await connectWithRetry();
+        
+        const port = process.env.PORT || 3000;
+        httpServer.listen(port, () => {
+            console.log(`Server running on port ${port}`);
         });
-    } catch (err) {
-        logError(err, 'server-startup');
-        if (process.env.NODE_ENV !== 'production') {
+
+        httpServer.on('error', (error) => {
+            logError(error, 'http-server');
+            if (error.syscall !== 'listen') {
+                throw error;
+            }
             process.exit(1);
-        }
+        });
+    } catch (error) {
+        logError(error, 'server-startup');
+        process.exit(1);
     }
-};
+}
 
 startServer();
