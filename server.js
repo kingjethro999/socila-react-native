@@ -3,15 +3,10 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { createServer } = require('http');
+const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
-
-// Import routes
-const userRoutes = require('./routes/userRoutes');
-const postRoutes = require('./routes/postRoutes');
-const chatRoutes = require('./routes/chatRoutes');
 
 // Ensure required directories exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -20,7 +15,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const app = express();
-const httpServer = createServer(app);
+const httpServer = http.createServer(app);
 
 // Initialize Socket.IO with enhanced error handling
 const io = new Server(httpServer, {
@@ -96,26 +91,46 @@ app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    exposedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Add request logging middleware
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    console.log('Headers:', req.headers);
-    next();
-});
-
-// Parse JSON bodies
 app.use(express.json({ limit: '10mb' }));
-// Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// API Routes
+// Add request logging middleware
+app.use((req, res, next) => {
+    console.log('Incoming request:', {
+        method: req.method,
+        path: req.path,
+        headers: req.headers,
+        body: req.method === 'POST' ? req.body : undefined
+    });
+    next();
+});
+
+// Health check route
+app.get('/', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Server is running',
+        time: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        routes: {
+            profilePicture: '/api/users/profile-picture',
+            uploads: '/uploads'
+        }
+    });
+});
+
+// Import routes
+const userRoutes = require('./routes/userRoutes');
+const postRoutes = require('./routes/postRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+
+// Mount routes
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/chats', chatRoutes);
@@ -146,10 +161,10 @@ app.get('/health', async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
-    res.status(err.status || 500).json({
-        message: err.message || 'Internal Server Error',
-        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    console.error('Global error handler:', err);
+    res.status(500).json({
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 

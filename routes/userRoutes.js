@@ -167,18 +167,42 @@ router.put('/profile', auth, async (req, res) => {
     }
 });
 
-// Update profile picture
+// Test route for profile picture endpoint
+router.get('/profile-picture', (req, res) => {
+    res.json({
+        message: 'Profile picture endpoint is working',
+        method: req.method,
+        path: req.path,
+        headers: req.headers,
+        instructions: 'This endpoint only accepts POST requests with a profile picture file',
+        expectedFormat: {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer your-token-here'
+            },
+            body: 'FormData with profilePicture field'
+        }
+    });
+});
+
+// Profile picture upload route
 router.post('/profile-picture', auth, upload.single('profilePicture'), async (req, res) => {
     try {
         console.log('Received profile picture update request:', {
             file: req.file,
             userId: req.user._id,
-            body: req.body,
-            headers: req.headers
+            headers: req.headers,
+            body: req.body
         });
 
         if (!req.file) {
-            return res.status(400).json({ message: 'No file uploaded' });
+            return res.status(400).json({ 
+                message: 'No file uploaded',
+                received: {
+                    headers: req.headers,
+                    body: req.body
+                }
+            });
         }
 
         const user = await User.findById(req.user._id);
@@ -195,30 +219,16 @@ router.post('/profile-picture', auth, upload.single('profilePicture'), async (re
         }
 
         // Update user's profile picture URL
-        const profilePictureUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+        const profilePictureUrl = `/uploads/${req.file.filename}`;
         user.profilePicture = profilePictureUrl;
         await user.save();
 
-        console.log('Profile picture updated successfully:', {
-            userId: user._id,
-            newPicture: profilePictureUrl
-        });
-
-        res.json({ 
+        res.json({
             message: 'Profile picture updated successfully',
             profilePicture: profilePictureUrl
         });
     } catch (error) {
-        console.error('Error updating profile picture:', error);
-        
-        // Clean up uploaded file if update fails
-        if (req.file) {
-            const filePath = path.join(uploadsDir, req.file.filename);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
-
+        console.error('Profile picture update error:', error);
         res.status(500).json({ 
             message: 'Error updating profile picture',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
