@@ -10,13 +10,14 @@ const postSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
-    media: [{
-        type: String,
-        trim: true
-    }],
+    media: {
+        type: [String],
+        default: []
+    },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+        ref: 'User',
+        default: []
     }],
     comments: [{
         userId: {
@@ -46,9 +47,7 @@ postSchema.index({ createdAt: -1 });
 postSchema.pre('save', function(next) {
     if (!this.text && (!this.media || this.media.length === 0)) {
         next(new Error('Post must contain either text or media'));
-    }
-    if (this.media && this.media.length > 5) {
-        next(new Error('Maximum of 5 media items allowed'));
+        return;
     }
     next();
 });

@@ -53,10 +53,14 @@ router.get('/', auth, async (req, res) => {
         // Format posts with like status
         const formattedPosts = posts.map(post => {
             const isLiked = post.likes.includes(req.user._id);
+            const mediaUrls = post.media.map(filename => 
+                `${req.protocol}://${req.get('host')}/uploads/${filename}`
+            );
+
             return {
                 _id: post._id,
                 text: post.text,
-                media: post.media.map(filename => `${req.protocol}://${req.get('host')}/uploads/${filename}`),
+                media: mediaUrls,
                 likes: post.likes,
                 comments: post.comments,
                 userId: post.userId,
@@ -83,17 +87,16 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
         });
 
         const { text } = req.body;
+        const media = req.files ? req.files.map(file => file.filename) : [];
 
-        if (!text && (!req.files || req.files.length === 0)) {
+        if (!text && media.length === 0) {
             return res.status(400).json({ message: 'Post must have either text or media' });
         }
 
-        const media = req.files ? req.files.map(file => file.filename) : [];
-
         const post = new Post({
+            userId: req.user._id,
             text,
-            media,
-            userId: req.user._id
+            media
         });
 
         await post.save();
@@ -101,10 +104,14 @@ router.post('/', auth, upload.array('media', 5), async (req, res) => {
 
         console.log('Post created successfully:', post._id);
 
+        const mediaUrls = media.map(filename => 
+            `${req.protocol}://${req.get('host')}/uploads/${filename}`
+        );
+
         res.status(201).json({
             _id: post._id,
             text: post.text,
-            media: media.map(filename => `${req.protocol}://${req.get('host')}/uploads/${filename}`),
+            media: mediaUrls,
             likes: post.likes,
             comments: post.comments,
             userId: post.userId,
