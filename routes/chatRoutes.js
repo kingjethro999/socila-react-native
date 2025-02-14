@@ -6,10 +6,19 @@ const auth = require('../middleware/auth');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
-    destination: 'uploads/',
+    destination: function(req, file, cb) {
+        cb(null, uploadsDir);
+    },
     filename: function(req, file, cb) {
         cb(null, uuidv4() + path.extname(file.originalname));
     }
@@ -22,10 +31,31 @@ const upload = multer({
         if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type'));
+            cb(new Error('Invalid file type. Only images and videos are allowed.'));
         }
     }
 });
+
+// Error handling middleware
+const handleError = (err, req, res, next) => {
+    console.error('Error in chat routes:', err);
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ 
+            message: 'File upload error',
+            error: err.message
+        });
+    }
+    if (err.name === 'ValidationError') {
+        return res.status(400).json({ 
+            message: 'Validation error',
+            error: err.message
+        });
+    }
+    res.status(500).json({ 
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+};
 
 // Get all chats for current user
 router.get('/', auth, async (req, res) => {
@@ -50,8 +80,7 @@ router.get('/', auth, async (req, res) => {
 
         res.json({ chats: chatsWithUnread });
     } catch (error) {
-        console.error('Error getting chats:', error);
-        res.status(500).json({ message: 'Error getting chats' });
+        handleError(error, req, res);
     }
 });
 
@@ -82,15 +111,14 @@ router.get('/search', auth, async (req, res) => {
 
         res.json({ chats: filteredChats });
     } catch (error) {
-        console.error('Error searching chats:', error);
-        res.status(500).json({ message: 'Error searching chats' });
+        handleError(error, req, res);
     }
 });
 
 // Get single chat
 router.get('/:id', auth, async (req, res) => {
     try {
-        const chat = await Chat.findById(req.query.id)
+        const chat = await Chat.findById(req.params.id)
             .populate('participants', 'username profilePicture')
             .populate('lastMessage');
 
@@ -104,8 +132,7 @@ router.get('/:id', auth, async (req, res) => {
 
         res.json({ chat });
     } catch (error) {
-        console.error('Error getting chat:', error);
-        res.status(500).json({ message: 'Error getting chat' });
+        handleError(error, req, res);
     }
 });
 
@@ -144,8 +171,7 @@ router.get('/:id/messages', auth, async (req, res) => {
 
         res.json({ messages });
     } catch (error) {
-        console.error('Error getting messages:', error);
-        res.status(500).json({ message: 'Error getting messages' });
+        handleError(error, req, res);
     }
 });
 
@@ -171,6 +197,9 @@ router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
         if (req.file) {
             messageData.mediaUrl = `/uploads/${req.file.filename}`;
         } else {
+            if (!req.body.content) {
+                return res.status(400).json({ message: 'Message content is required' });
+            }
             messageData.content = req.body.content;
         }
 
@@ -192,13 +221,15 @@ router.post('/:id/messages', auth, upload.single('media'), async (req, res) => {
             }
         );
 
-        // Emit message through socket
-        req.app.get('io').to(req.params.id).emit('message', populatedMessage);
+        // Emit message through socket if available
+        const io = req.app.get('io');
+        if (io) {
+            io.to(req.params.id).emit('message', populatedMessage);
+        }
 
         res.status(201).json({ message: populatedMessage });
     } catch (error) {
-        console.error('Error sending message:', error);
-        res.status(500).json({ message: 'Error sending message' });
+        handleError(error, req, res);
     }
 });
 

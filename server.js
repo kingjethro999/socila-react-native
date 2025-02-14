@@ -2,12 +2,33 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
+// Import routes
+const userRoutes = require('./routes/userRoutes');
+const postRoutes = require('./routes/postRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+
+// Ensure required directories exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 const app = express();
 const httpServer = createServer(app);
+
+// Initialize Socket.IO with enhanced error handling
+const io = new Server(httpServer, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST'],
+        credentials: true
+    }
+});
 
 // Enhanced error logging
 const logError = (err, context) => {
@@ -17,6 +38,57 @@ const logError = (err, context) => {
         time: new Date().toISOString()
     });
 };
+
+// Socket.IO middleware for authentication
+io.use((socket, next) => {
+    try {
+        const token = socket.handshake.auth.token;
+        if (!token) {
+            throw new Error('No token provided');
+        }
+
+        const decoded = jwt.verify(token, 'your-secret-key');
+        socket.userId = decoded.userId;
+        next();
+    } catch (err) {
+        logError(err, 'socket-auth');
+        next(new Error('Authentication failed'));
+    }
+});
+
+// Socket.IO connection handling with error handling
+io.on('connection', (socket) => {
+    console.log('User connected:', socket.userId);
+
+    socket.on('join-chat', (chatId) => {
+        try {
+            socket.join(chatId);
+            console.log(`User ${socket.userId} joined chat ${chatId}`);
+        } catch (err) {
+            logError(err, 'socket-join-chat');
+        }
+    });
+
+    socket.on('leave-chat', (chatId) => {
+        try {
+            socket.leave(chatId);
+            console.log(`User ${socket.userId} left chat ${chatId}`);
+        } catch (err) {
+            logError(err, 'socket-leave-chat');
+        }
+    });
+
+    socket.on('error', (error) => {
+        logError(error, 'socket-error');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.userId);
+    });
+});
+
+// Make io accessible to routes
+app.set('io', io);
 
 // Middleware
 app.use(cors({
@@ -91,6 +163,8 @@ app.use('/api/chats', async (req, res, next) => {
 
 // Your existing routes here
 app.use('/api/chats', chatRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/posts', postRoutes);
 
 // Enhanced error handling middleware
 app.use((err, req, res, next) => {
@@ -120,6 +194,14 @@ app.use((err, req, res, next) => {
         } : 'Internal server error'
     });
 });
+
+// MongoDB configuration
+const MONGODB_URI = "mongodb+srv://jethrojerrybj:seun2009@cluster0.cwsrk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const options = {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    dbName: 'social-media-app'
+};
 
 // MongoDB connection with retry logic
 const connectWithRetry = async (retries = 5, delay = 5000) => {
